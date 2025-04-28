@@ -34,7 +34,7 @@ def search():
         search_box.send_keys(query)
 
         # Find and click the search button
-        search_button = driver.find_element(By.CLASS_NAME, "btnK")
+        search_button = driver.find_element(By.CLASS, "btnK")
         search_button.click()
 
         # Wait for the results to load
