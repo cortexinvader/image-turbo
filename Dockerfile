@@ -29,22 +29,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Chromium
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    chromium \
+# Install Google Chrome
+RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
+    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list \
+    && apt-get update \
+    && apt-get install -y google-chrome-stable \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Set up ChromeDriver - install latest compatible version
-RUN CHROMIUM_VERSION=$(chromium --version | awk '{print $2}' | cut -d'.' -f1) \
-    && CHROME_DRIVER_VERSION=$(curl -s "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_$CHROMIUM_VERSION") \
-    && wget -q -O /tmp/chromedriver.zip "https://chromedriver.storage.googleapis.com/$CHROME_DRIVER_VERSION/chromedriver_linux64.zip" \
-    && unzip /tmp/chromedriver.zip -d /usr/bin/ \
-    && rm /tmp/chromedriver.zip \
-    && chmod +x /usr/bin/chromedriver
+# Install ChromeDriver
+RUN CHROME_VERSION=$(google-chrome --version | cut -d ' ' -f3 | cut -d '.' -f1) \
+    && wget -q -O /tmp/chromedriver_linux64.zip "https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/$(curl -s https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_${CHROME_VERSION})/linux64/chromedriver-linux64.zip" \
+    && unzip /tmp/chromedriver_linux64.zip -d /tmp/ \
+    && mv /tmp/chromedriver-linux64/chromedriver /usr/bin/chromedriver \
+    && chmod +x /usr/bin/chromedriver \
+    && rm -rf /tmp/chromedriver_linux64.zip /tmp/chromedriver-linux64
 
 # Set environment variables for Chrome and ChromeDriver
-ENV CHROME_BINARY_PATH="/usr/bin/chromium"
+ENV CHROME_BINARY_PATH="/usr/bin/google-chrome"
 ENV CHROME_DRIVER_PATH="/usr/bin/chromedriver"
 
 # Set working directory
@@ -60,5 +62,5 @@ COPY . .
 # Expose the port
 EXPOSE 8080
 
-# Command to run the application with debug output
-CMD exec gunicorn --bind 0.0.0.0:$PORT --log-level debug app:app
+# Command to run the application
+CMD gunicorn --bind 0.0.0.0:${PORT:-8080} app:app
