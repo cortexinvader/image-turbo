@@ -1,0 +1,67 @@
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+import time
+import os
+
+class WebAutomator:
+    def __init__(self):
+        """Initialize the WebAutomator with configured Chrome options."""
+        chrome_options = Options()
+        # Add options for headless operation in a containerized environment
+        chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-gpu")
+        
+        # Set up path for Chrome and ChromeDriver (for Render.com deployment)
+        chrome_binary_path = os.environ.get('CHROME_BINARY_PATH', '/usr/bin/chromium')
+        chrome_driver_path = os.environ.get('CHROME_DRIVER_PATH', '/usr/bin/chromedriver')
+        
+        if os.path.exists(chrome_driver_path):
+            service = Service(executable_path=chrome_driver_path)
+            self.driver = webdriver.Chrome(service=service, options=chrome_options)
+        else:
+            # If specific path not found, let Selenium find ChromeDriver
+            self.driver = webdriver.Chrome(options=chrome_options)
+
+    def run(self, url, action="screenshot"):
+        """
+        Run an automation task on the provided URL.
+        
+        Args:
+            url (str): The website URL to automate
+            action (str): The automation action to perform
+                          (e.g., "screenshot", "extract_text")
+        
+        Returns:
+            dict: Result of the automation task
+        """
+        try:
+            self.driver.get(url)
+            # Wait for page to load
+            time.sleep(3)
+            
+            if action == "screenshot":
+                # Take screenshot (in real app would save or return as bytes)
+                self.driver.save_screenshot('/tmp/screenshot.png')
+                return {"status": "success", "action": "screenshot", "message": "Screenshot taken"}
+                
+            elif action == "extract_text":
+                # Example of extracting all text from page
+                body_text = self.driver.find_element(By.TAG_NAME, "body").text
+                return {"status": "success", "action": "extract_text", "data": body_text[:500] + "..."}
+                
+            elif action == "get_title":
+                # Get the page title
+                title = self.driver.title
+                return {"status": "success", "action": "get_title", "data": title}
+                
+            else:
+                return {"status": "error", "message": f"Unknown action: {action}"}
+                
+        finally:
+            self.driver.quit()
