@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: selenium-flask-app
+    env: docker
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: PORT
+        value: 8080
+    buildCommand: ""
+    startCommand: ""
