@@ -1,27 +1,28 @@
-from flask import Flask, jsonify, request
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
+from flask import Flask, render_template, request, jsonify
+from automation.web_automator import WebAutomator
+import os
 
 app = Flask(__name__)
 
 @app.route('/')
 def index():
-    url = request.args.get('url', 'https://www.google.com')  # Get URL from query param
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.binary_location = "/usr/bin/chromium"  # Path to Chromium binary
+    return render_template('index.html')
 
-    driver = webdriver.Chrome(options=chrome_options)
-
+@app.route('/run_automation', methods=['POST'])
+def run_automation():
+    url = request.json.get('url')
+    action = request.json.get('action')
+    
+    if not url:
+        return jsonify({'error': 'URL is required'}), 400
+    
     try:
-        driver.get(url)
-        title = driver.title
-    finally:
-        driver.quit()
-
-    return jsonify({"title": title})
+        automator = WebAutomator()
+        result = automator.run(url, action)
+        return jsonify({'result': result})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=5000)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
