@@ -35,9 +35,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Set ChromeDriver version
-ENV CHROMEDRIVER_VERSION="114.0.5735.90"
-RUN wget -q -O /tmp/chromedriver.zip https://chromedriver.storage.googleapis.com/$CHROMEDRIVER_VERSION/chromedriver_linux64.zip \
+# Set up ChromeDriver - install latest compatible version
+RUN CHROMIUM_VERSION=$(chromium --version | awk '{print $2}' | cut -d'.' -f1) \
+    && CHROME_DRIVER_VERSION=$(curl -s "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_$CHROMIUM_VERSION") \
+    && wget -q -O /tmp/chromedriver.zip "https://chromedriver.storage.googleapis.com/$CHROME_DRIVER_VERSION/chromedriver_linux64.zip" \
     && unzip /tmp/chromedriver.zip -d /usr/bin/ \
     && rm /tmp/chromedriver.zip \
     && chmod +x /usr/bin/chromedriver
@@ -59,5 +60,5 @@ COPY . .
 # Expose the port
 EXPOSE 8080
 
-# Command to run the application
-CMD gunicorn --bind 0.0.0.0:$PORT app:app
+# Command to run the application with debug output
+CMD exec gunicorn --bind 0.0.0.0:$PORT --log-level debug app:app
