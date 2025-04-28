@@ -1,37 +1,63 @@
-# Use official Python slim image
-FROM python:3.8-slim
+FROM python:3.10-slim
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV DEBIAN_FRONTEND=noninteractive
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
-    wget \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gnupg \
-    ca-certificates \
+    wget \
+    curl \
+    unzip \
     fonts-liberation \
-    libappindicator3-1 \
-    libx11-xcb1 \
-    libxtst6 \
-    xdg-utils \
-    chromium \
-    chromium-driver \
+    libnss3 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libasound2 \
+    libpango-1.0-0 \
+    libcairo2 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Set environment variables for Selenium
-ENV CHROME_BIN=/usr/bin/chromium
-ENV CHROMEDRIVER_BIN=/usr/bin/chromedriver
+# Install Chromium
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    chromium \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Set ChromeDriver version
+ENV CHROMEDRIVER_VERSION="114.0.5735.90"
+RUN wget -q -O /tmp/chromedriver.zip https://chromedriver.storage.googleapis.com/$CHROMEDRIVER_VERSION/chromedriver_linux64.zip \
+    && unzip /tmp/chromedriver.zip -d /usr/bin/ \
+    && rm /tmp/chromedriver.zip \
+    && chmod +x /usr/bin/chromedriver
 
-# Copy application code
-COPY . /app
+# Set environment variables for Chrome and ChromeDriver
+ENV CHROME_BINARY_PATH="/usr/bin/chromium"
+ENV CHROME_DRIVER_PATH="/usr/bin/chromedriver"
 
 # Set working directory
 WORKDIR /app
 
-# Expose the port Flask uses
-EXPOSE 5000
+# Copy requirements and install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Run the Flask app using gunicorn
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
+# Copy the rest of the code
+COPY . .
+
+# Expose the port
+EXPOSE 8080
+
+# Command to run the application
+CMD gunicorn --bind 0.0.0.0:$PORT app:app
