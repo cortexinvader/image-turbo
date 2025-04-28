@@ -1,28 +1,56 @@
-from flask import Flask, render_template, request, jsonify
-from automation.web_automator import WebAutomator
-import os
+from flask import Flask, request, jsonify
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+from bs4 import BeautifulSoup
+import time
 
 app = Flask(__name__)
 
-@app.route('/')
-def index():
-    return render_template('index.html')
+@app.route('/search')
+def search():
+    query = request.args.get('q', '')
 
-@app.route('/run_automation', methods=['POST'])
-def run_automation():
-    url = request.json.get('url')
-    action = request.json.get('action')
-    
-    if not url:
-        return jsonify({'error': 'URL is required'}), 400
-    
+    if not query:
+        return jsonify({"error": "Please provide a search query using '?q=your_query'"}), 400
+
+    # Set up headless Chrome
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")  # Headless mode
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+
+    service = Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service, options=chrome_options)
+
     try:
-        automator = WebAutomator()
-        result = automator.run(url, action)
-        return jsonify({'result': result})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        # Open Google
+        driver.get("https://www.google.com/search")
+
+        # Find the search box and enter the query
+        search_box = driver.find_element(By.ID, "APjFqb")
+        search_box.send_keys(query)
+
+        # Find and click the search button
+        search_button = driver.find_element(By.CLASS_NAME, "btnK")
+        search_button.click()
+
+        # Wait for the results to load
+        time.sleep(5)
+
+        # Now get page source and parse with BeautifulSoup
+        soup = BeautifulSoup(driver.page_source, "html.parser")
+
+        # Find all elements with class "WaaZC"
+        results = soup.find_all(class_="WaaZC")
+        extracted_texts = [result.get_text() for result in results]
+
+    finally:
+        driver.quit()
+
+    return jsonify({"query": query, "results": extracted_texts})
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(debug=True,host='0.0.0.0',port=3000)
