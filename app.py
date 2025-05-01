@@ -173,12 +173,53 @@ def search():
     try:
         logger.debug(f"[{request_id}] Initializing Chrome WebDriver")
         chrome_options = get_chrome_options()
-        chrome_driver_path = "/usr/bin/chromedriver"
+        # Find ChromeDriver in various locations
+        possible_driver_paths = [
+            "/usr/bin/chromedriver",
+            "/usr/local/bin/chromedriver", 
+            "/app/chromedriver",
+            os.path.join(os.getcwd(), "chromedriver")
+        ]
         
-        if not os.path.exists(chrome_driver_path):
-            logger.error(f"[{request_id}] ChromeDriver not found at {chrome_driver_path}")
+        # Check environment variable for ChromeDriver path
+        if os.environ.get("CHROMEDRIVER_PATH"):
+            possible_driver_paths.insert(0, os.environ.get("CHROMEDRIVER_PATH"))
+            
+        # Check for ChromeDriver in PATH
+        if "PATH" in os.environ:
+            for path_dir in os.environ["PATH"].split(os.pathsep):
+                candidate_path = os.path.join(path_dir, "chromedriver")
+                if os.path.exists(candidate_path) and os.access(candidate_path, os.X_OK):
+                    possible_driver_paths.append(candidate_path)
+        
+        # Log all locations we're checking
+        logger.debug(f"[{request_id}] Searching for ChromeDriver in: {possible_driver_paths}")
+        
+        chrome_driver_path = None
+        for path in possible_driver_paths:
+            if os.path.exists(path):
+                if os.access(path, os.X_OK):
+                    logger.info(f"[{request_id}] Found executable ChromeDriver at {path}")
+                    chrome_driver_path = path
+                    break
+                else:
+                    logger.warning(f"[{request_id}] ChromeDriver found at {path} but is not executable")
+            else:
+                logger.debug(f"[{request_id}] ChromeDriver not found at {path}")
+                
+        if not chrome_driver_path:
+            logger.error(f"[{request_id}] ChromeDriver not found in any of the searched locations")
+            # Try to check if Chrome is installed
+            chrome_paths = [
+                "/usr/bin/google-chrome",
+                "/usr/bin/google-chrome-stable"
+            ]
+            chrome_installed = any(os.path.exists(path) for path in chrome_paths)
+            
             return jsonify({
-                "error": f"ChromeDriver not found at {chrome_driver_path}",
+                "error": "ChromeDriver not found. Please ensure ChromeDriver is installed and accessible.",
+                "searched_paths": possible_driver_paths,
+                "chrome_installed": chrome_installed,
                 "status": "error",
                 "request_id": request_id
             }), 500
@@ -297,7 +338,7 @@ def server_error(e):
     }), 500
 
 # Health check endpoint
-@app.route('/health')
+@app.route('/')
 def health_check():
     """Health check endpoint"""
     request_id = getattr(request, 'request_id', str(uuid.uuid4()))
@@ -332,6 +373,66 @@ def log_request_performance(response):
         logger.info(f"[{request_id}] Request performance: {request.method} {request.path} completed in {elapsed_time:.4f} seconds")
     return response
 
+@app.route('/debug')
+def debug_info():
+    """Debug endpoint to show system environment and paths"""
+    request_id = getattr(request, 'request_id', str(uuid.uuid4()))
+    logger.info(f"[{request_id}] Debug info requested")
+    
+    # Check for ChromeDriver
+    chromedriver_paths = [
+        "/usr/bin/chromedriver",
+        "/usr/local/bin/chromedriver",
+        "/app/chromedriver",
+        os.path.join(os.getcwd(), "chromedriver")
+    ]
+    
+    found_drivers = []
+    for path in chromedriver_paths:
+        if os.path.exists(path):
+            stats = os.stat(path)
+            found_drivers.append({
+                "path": path,
+                "executable": os.access(path, os.X_OK),
+                "size_bytes": stats.st_size,
+                "permissions": oct(stats.st_mode)[-3:],
+                "owner": stats.st_uid
+            })
+    
+    # Check Chrome version
+    chrome_version = "Unknown"
+    try:
+        chrome_output = os.popen("google-chrome --version").read().strip()
+        chrome_version = chrome_output
+    except Exception as e:
+        chrome_version = f"Error detecting: {str(e)}"
+    
+    # Check user and permissions
+    current_user = os.getuid()
+    try:
+        import pwd
+        username = pwd.getpwuid(current_user).pw_name
+    except:
+        username = str(current_user)
+    
+    debug_data = {
+        "environment": dict(os.environ),
+        "current_directory": os.getcwd(),
+        "user": {
+            "uid": current_user,
+            "username": username
+        },
+        "chromedriver": found_drivers,
+        "chrome_version": chrome_version,
+        "python_executable": sys.executable,
+        "python_version": platform.python_version(),
+        "platform": platform.platform(),
+        "request_id": request_id
+    }
+    
+    logger.info(f"[{request_id}] Debug info generated")
+    return jsonify(debug_data)
+
 if __name__ == '__main__':
     try:
         # Log system information at startup
@@ -343,6 +444,39 @@ if __name__ == '__main__':
         
         logger.info(f"Starting Flask app on {host}:{port}")
         logger.info(f"Log files will be stored in: {os.path.abspath(log_directory)}")
+        
+        # Find ChromeDriver at startup
+        chromedriver_paths = [
+            "/usr/bin/chromedriver",
+            "/usr/local/bin/chromedriver",
+            "/app/chromedriver",
+            os.path.join(os.getcwd(), "chromedriver")
+        ]
+        
+        found_driver = None
+        for path in chromedriver_paths:
+            if os.path.exists(path):
+                executable = os.access(path, os.X_OK)
+                logger.info(f"Found ChromeDriver at {path} (Executable: {executable})")
+                if executable:
+                    found_driver = path
+                    break
+                else:
+                    logger.warning(f"ChromeDriver at {path} is not executable. Trying to fix...")
+                    try:
+                        os.chmod(path, 0o755)
+                        logger.info(f"Fixed permissions for ChromeDriver at {path}")
+                        found_driver = path
+                        break
+                    except Exception as e:
+                        logger.error(f"Failed to fix permissions: {str(e)}")
+        
+        if found_driver:
+            logger.info(f"Will use ChromeDriver at {found_driver}")
+            # Set as environment variable for the application
+            os.environ["CHROMEDRIVER_PATH"] = found_driver
+        else:
+            logger.warning("No executable ChromeDriver found at startup. Search will be performed at request time.")
         
         # Start the Flask app
         app.run(host=host, port=port)
