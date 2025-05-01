@@ -27,6 +27,10 @@ RUN CHROME_VERSION=$(google-chrome --version | grep -oP '\d+\.\d+\.\d+') && \
     rm /tmp/chromedriver.zip && \
     chmod +x /usr/bin/chromedriver
 
+# Also place a copy in the app directory to ensure it's accessible by the non-root user
+RUN cp /usr/bin/chromedriver /app/chromedriver && \
+    chmod 755 /app/chromedriver
+
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
@@ -35,11 +39,20 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Add non-root user
-RUN useradd -m appuser && chown -R appuser:appuser /app
+RUN useradd -m appuser && \
+    chown -R appuser:appuser /app && \
+    # Make sure logs directory exists and is writable
+    mkdir -p /app/logs && \
+    chown -R appuser:appuser /app/logs
+
 USER appuser
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
+ENV CHROMEDRIVER_PATH=/app/chromedriver
+
+# Create logs directory
+RUN mkdir -p /app/logs
 
 # Expose the app on port 3000
 EXPOSE 3000
