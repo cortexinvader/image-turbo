@@ -1,3 +1,6 @@
-Flask
+flask
 selenium
 beautifulsoup4
+requests
+lxml
+webdriver-manager
