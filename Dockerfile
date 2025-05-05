@@ -1,8 +1,7 @@
 FROM python:3.10-slim
 
-# Install system dependencies
+# Install Chromium and required system libraries
 RUN apt-get update && apt-get install -y \
-    chromium-driver \
     chromium \
     wget \
     gnupg \
@@ -15,21 +14,22 @@ RUN apt-get update && apt-get install -y \
     libgtk-3-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Environment variables for Chromium
+# Set environment variables for Chromium
 ENV CHROME_BIN=/usr/bin/chromium
-ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
 ENV PYTHONUNBUFFERED=1
 
-# Set work directory
+# Set working directory
 WORKDIR /app
 
-# Install dependencies
+# Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy app
+# Copy your app code
 COPY . .
 
-# Expose port and run app
+# Expose the port
 EXPOSE 10000
-CMD ["python", "app.py"]
+
+# Start the Flask app
+CMD ["gunicorn", "-b", "0.0.0.0:10000", "app:app"]
