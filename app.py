@@ -1,6 +1,8 @@
 from flask import Flask, jsonify
 from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+from webdriver_manager.chrome import ChromeDriverManager
 import logging
 import os
 
@@ -16,7 +18,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("FlaskSeleniumApp")
 
-# Flask App
 app = Flask(__name__)
 
 @app.route('/')
@@ -31,8 +32,9 @@ def home():
         options.add_argument("--disable-dev-shm-usage")
         options.binary_location = os.getenv("CHROME_BIN", "/usr/bin/chromium")
 
-        logger.debug("Initializing Chrome WebDriver")
-        driver = webdriver.Chrome(executable_path=os.getenv("CHROMEDRIVER_PATH", "/usr/bin/chromedriver"), options=options)
+        logger.debug("Downloading and using ChromeDriver with webdriver-manager")
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=options)
 
         url = "https://www.google.com"
         logger.info(f"Navigating to {url}")
