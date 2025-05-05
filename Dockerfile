@@ -1,61 +1,35 @@
-# Use Python 3.9 slim as base image
-FROM python:3.9-slim
+FROM python:3.10-slim
 
-# Set working directory
-WORKDIR /app
-
-# Install system dependencies including Chrome and unzip
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
+    chromium-driver \
+    chromium \
     wget \
-    gnupg2 \
-    apt-transport-https \
-    ca-certificates \
-    curl \
+    gnupg \
     unzip \
-    && wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
-    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google.list \
-    && apt-get update \
-    && apt-get install -y google-chrome-stable \
-    && apt-get clean \
+    fonts-liberation \
+    libnss3 \
+    libxss1 \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libgtk-3-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install matching ChromeDriver version
-RUN CHROME_VERSION=$(google-chrome --version | grep -oP '\d+\.\d+\.\d+') && \
-    DRIVER_VERSION=$(curl -s "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_$CHROME_VERSION") && \
-    wget -O /tmp/chromedriver.zip https://chromedriver.storage.googleapis.com/${DRIVER_VERSION}/chromedriver_linux64.zip && \
-    unzip /tmp/chromedriver.zip -d /usr/bin && \
-    rm /tmp/chromedriver.zip && \
-    chmod +x /usr/bin/chromedriver
+# Environment variables for Chromium
+ENV CHROME_BIN=/usr/bin/chromium
+ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
+ENV PYTHONUNBUFFERED=1
 
-# Also place a copy in the app directory to ensure it's accessible by the non-root user
-RUN cp /usr/bin/chromedriver /app/chromedriver && \
-    chmod 755 /app/chromedriver
+# Set work directory
+WORKDIR /app
 
-# Copy requirements and install Python dependencies
+# Install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of your app
+# Copy app
 COPY . .
 
-# Add non-root user
-RUN useradd -m appuser && \
-    chown -R appuser:appuser /app && \
-    # Make sure logs directory exists and is writable
-    mkdir -p /app/logs && \
-    chown -R appuser:appuser /app/logs
-
-USER appuser
-
-# Set environment variables
-ENV PYTHONUNBUFFERED=1
-ENV CHROMEDRIVER_PATH=/app/chromedriver
-
-# Create logs directory
-RUN mkdir -p /app/logs
-
-# Expose the app on port 3000
-EXPOSE 3000
-
-# Start the Flask app
+# Expose port and run app
+EXPOSE 10000
 CMD ["python", "app.py"]
