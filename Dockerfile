@@ -1,11 +1,12 @@
 FROM python:3.10-slim
 
-# Install Chromium and required system libraries
+# Install Chromium and needed dependencies
 RUN apt-get update && apt-get install -y \
     chromium \
     wget \
-    gnupg \
     unzip \
+    git \
+    ca-certificates \
     fonts-liberation \
     libnss3 \
     libxss1 \
@@ -14,22 +15,20 @@ RUN apt-get update && apt-get install -y \
     libgtk-3-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Set environment variables for Chromium
+# Set Chromium path
 ENV CHROME_BIN=/usr/bin/chromium
 ENV PYTHONUNBUFFERED=1
 
-# Set working directory
+# Create app directory
 WORKDIR /app
 
-# Install Python dependencies
+# Copy and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy your app code
+# Copy app code
 COPY . .
 
-# Expose the port
+# Expose port and run app
 EXPOSE 10000
-
-# Start the Flask app
 CMD ["gunicorn", "-b", "0.0.0.0:10000", "app:app"]
