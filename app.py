@@ -23,14 +23,14 @@ app = Flask(__name__)
 @app.route('/')
 def home():
     logger.info("Received request at '/' route")
-
+    driver = None
     try:
         logger.debug("Setting up Chrome options for headless operation")
         options = Options()
-        options.add_argument("--headless")
+        options.add_argument("--headless=new")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
-        options.binary_location = os.getenv("CHROME_BIN", "/usr/bin/chromium")
+        options.binary_location = os.getenv("CHROME_BIN", "/usr/bin/google-chrome")
 
         logger.debug("Downloading and using ChromeDriver with webdriver-manager")
         service = Service(ChromeDriverManager().install())
@@ -43,13 +43,11 @@ def home():
         title = driver.title
         logger.info(f"Page title fetched: {title}")
 
-        driver.quit()
-        logger.debug("WebDriver closed successfully")
-
         return jsonify({"title": title})
     except Exception as e:
         logger.exception("An error occurred while processing the request")
         return jsonify({"error": str(e)}), 500
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    finally:
+        if driver:
+            driver.quit()
+            logger.debug("WebDriver closed successfully")
