@@ -1,24 +1,20 @@
-FROM python:3.10-slim
+FROM python:3.11-slim
 
-# Install Google Chrome and dependencies
-RUN apt-get update && apt-get install -y wget gnupg ca-certificates \
-    && wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - \
-    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
-    && apt-get update && apt-get install -y google-chrome-stable fonts-liberation libnss3 libxss1 libasound2 libatk-bridge2.0-0 libgtk-3-0 \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+    chromium-driver \
+    chromium \
+    fonts-liberation \
+    wget \
+    unzip \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-ENV CHROME_BIN=/usr/bin/google-chrome
-ENV PYTHONUNBUFFERED=1
-
+ENV DISPLAY=:99
+RUN which chromium && which chromedriver
 WORKDIR /app
 
 COPY requirements.txt .
+COPY app.py .
+
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
-
-RUN useradd -m appuser
-USER appuser
-
-EXPOSE 10000
-CMD ["gunicorn", "-b", "0.0.0.0:10000", "app:app"]
+CMD ["python", "app.py"]
