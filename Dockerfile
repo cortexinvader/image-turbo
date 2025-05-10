@@ -1,11 +1,8 @@
-# Use a base Python image
 FROM python:3.11-slim
 
-# Set environment variables
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
-# Set work directory
 WORKDIR /app
 
 # Install dependencies
@@ -15,15 +12,13 @@ RUN apt-get update && apt-get install -y \
     chromium chromium-driver \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
+# Set environment variables for Chrome and Chromedriver binaries
+ENV CHROME_BIN=/usr/bin/chromium
+ENV CHROMEDRIVER_BIN=/usr/bin/chromedriver
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the app
 COPY . .
 
-# Set Chromium binary path as environment variable (optional, for reference)
-ENV CHROME_BIN=/usr/bin/chromium
-
-# Run your app (modify as needed)
 CMD ["python", "app.py"]
