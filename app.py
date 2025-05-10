@@ -34,7 +34,7 @@ def check_google_title():
     driver = None
     try:
         driver = webdriver.Chrome(service=service, options=options)
-        driver.get("https://www.google.com")
+        driver.get("https://chat-with-kora.onrender.com")
         title = driver.title
         return title
     finally:
