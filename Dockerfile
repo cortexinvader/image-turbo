@@ -1,40 +1,29 @@
+# Use a base Python image
 FROM python:3.11-slim
 
-ENV CHROME_VERSION=123.0.6312.105
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
 
-# Install only valid and required packages
+# Set work directory
+WORKDIR /app
+
+# Install dependencies
 RUN apt-get update && apt-get install -y \
-    wget \
-    unzip \
-    curl \
-    gnupg \
-    ca-certificates \
-    libnss3 \
-    libxss1 \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libgtk-3-0 \
-    libx11-xcb1 \
-    fonts-liberation \
+    wget unzip curl gnupg ca-certificates fonts-liberation \
+    libnss3 libxss1 libappindicator3-1 libasound2 libatk-bridge2.0-0 libgtk-3-0 libx11-xcb1 \
+    chromium chromium-driver \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install Chromium (for Testing) and ChromeDriver
-RUN wget https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux/x64/chrome-linux.zip && \
-    unzip chrome-linux.zip && \
-    mv chrome-linux /opt/chrome && \
-    ln -s /opt/chrome/chrome /usr/bin/chromium
-
-RUN wget https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux/x64/chromedriver-linux64.zip && \
-    unzip chromedriver-linux64.zip && \
-    mv chromedriver-linux64/chromedriver /usr/bin/chromedriver && \
-    chmod +x /usr/bin/chromedriver
-
-ENV DISPLAY=:99
-
-WORKDIR /app
+# Install Python dependencies
 COPY requirements.txt .
-COPY app.py .
-
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy the app
+COPY . .
+
+# Set Chromium binary path as environment variable (optional, for reference)
+ENV CHROME_BIN=/usr/bin/chromium
+
+# Run your app (modify as needed)
 CMD ["python", "app.py"]
