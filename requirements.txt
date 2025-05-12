@@ -1,4 +1,4 @@
 flask
 selenium
 webdriver-manager
-Beautifulsoup
+
