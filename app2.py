@@ -38,18 +38,18 @@ driver = webdriver.Chrome(service=service, options=options)
 def index():
     try:
         query = request.args.get("query")
-        driver.get("https://chat-with-kora.onrender.com")
+        driver.get("https://chat-with-kora.onrender.com/Kora.html")
 
         if query:
             # Wait for the input box to be present
             time.sleep(2)  # May adjust with WebDriverWait for production use
-            input_box = driver.find_element(By.CSS_SELECTOR, "input[type='text']")
+            input_box = driver.find_element(By.NAME, "input-field")
             input_box.clear()
             input_box.send_keys(query)
             input_box.send_keys(Keys.RETURN)
 
             # Wait for the response to appear (adjust time as needed)
-            time.sleep(5)
+            time.sleep(10)
             page_source = driver.page_source
             soup = BeautifulSoup(page_source, "html.parser")
 
