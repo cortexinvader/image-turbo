@@ -1,43 +1,74 @@
-// Production JavaScript with error boundaries and performance optimizations
+// Production GET-First Reverse Image Search
+// Optimized for browser URLs, shareability, and performance
 
 class ReverseImageSearch {
     constructor() {
         this.API_BASE = window.location.origin;
         this.currentSessionId = null;
         this.searchInProgress = false;
+        this.searchType = 'url';
+        
+        // DOM elements
+        this.elements = {
+            container: document.querySelector('.container'),
+            urlInput: document.getElementById('urlInput'),
+            fileInput: document.getElementById('fileUpload'),
+            urlSearchBtn: document.getElementById('urlSearchBtn'),
+            fileSearchBtn: document.getElementById('fileSearchBtn'),
+            maxResults: document.getElementById('maxResults'),
+            fileMaxResults: document.getElementById('fileMaxResults'),
+            progress: document.getElementById('progress'),
+            progressFill: document.getElementById('progressFill'),
+            progressText: document.getElementById('progressText'),
+            status: document.getElementById('status'),
+            sessionInfo: document.getElementById('sessionInfo'),
+            uploadInfo: document.getElementById('uploadInfo'),
+            results: document.getElementById('results')
+        };
         
         this.initializeEventListeners();
         this.showEmptyState();
         this.focusFirstInput();
-        
-        // Production: Preload critical resources
-        this.preloadImages();
+        this.preloadCriticalResources();
+        this.initializeFromURL();
     }
     
     initializeEventListeners() {
         // Tab switching
-        document.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => this.switchTab(e.target.dataset.tab || e.target.closest('.tab-btn').dataset.tab));
+        document.querySelectorAll('.tab-btn').forEach((btn, index) => {
+            btn.addEventListener('click', (e) => this.switchTab(e.currentTarget.dataset.tab || index));
+            btn.dataset.tab = btn.textContent.trim().split(' ')[1].toLowerCase(); // 'URL Search' -> 'url'
         });
         
-        // Form submissions
-        document.querySelectorAll('.search-form').forEach(form => {
-            form.addEventListener('submit', (e) => e.preventDefault());
+        // Form handling
+        document.querySelector('.search-form').addEventListener('submit', (e) => e.preventDefault());
+        
+        // URL search
+        this.elements.urlInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                this.searchByUrl();
+            }
         });
         
-        // File handling
+        // File upload
         this.initializeFileUpload();
         
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => this.handleKeyboard(e));
         
         // Network status
-        window.addEventListener('online', () => this.showStatus('✅ Back online', 'success'));
-        window.addEventListener('offline', () => this.showStatus('⚠️ Connection lost', 'warning'));
+        window.addEventListener('online', () => this.showStatus('✅ Connection restored', 'success'));
+        window.addEventListener('offline', () => this.showStatus('⚠️ No internet connection', 'warning'));
+        
+        // Window resize
+        window.addEventListener('resize', () => this.handleResize());
     }
     
     async switchTab(tab) {
-        // Update UI
+        if (this.searchInProgress) return;
+        
+        // Update active states
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.classList.remove('active');
             btn.setAttribute('aria-selected', 'false');
@@ -46,34 +77,38 @@ class ReverseImageSearch {
             content.classList.remove('active');
         });
         
-        const activeBtn = document.querySelector(`[onclick="switchTab('${tab}')"]`) || 
-                         document.querySelector(`[data-tab="${tab}"]`);
+        const activeBtn = document.querySelector(`[data-tab="${tab}"]`) || 
+                         Array.from(document.querySelectorAll('.tab-btn')).find(btn => 
+                            btn.textContent.toLowerCase().includes(tab));
+        
         if (activeBtn) {
             activeBtn.classList.add('active');
             activeBtn.setAttribute('aria-selected', 'true');
         }
         
-        document.getElementById(`${tab}Tab`).classList.add('active');
+        const activeTab = document.getElementById(`${tab}Tab`);
+        if (activeTab) {
+            activeTab.classList.add('active');
+        }
         
         // Focus management
-        const focusable = document.querySelector(`#${tab}Tab [autofocus], #${tab}Tab input`);
-        if (focusable) {
-            focusable.focus();
-        }
+        const focusTarget = tab === 'url' ? this.elements.urlInput : this.elements.fileInput;
+        focusTarget?.focus();
         
         // Reset state
         this.resetSearchState();
         this.showEmptyState();
+        this.searchType = tab;
     }
     
     initializeFileUpload() {
-        const fileInput = document.getElementById('fileUpload');
-        const dropzone = document.getElementById('fileDropzone');
+        const dropzone = document.querySelector('.file-dropzone');
+        const fileInput = this.elements.fileInput;
         const preview = document.getElementById('filePreview');
         const fileName = document.getElementById('fileName');
-        const searchBtn = document.getElementById('fileSearchBtn');
+        const searchBtn = this.elements.fileSearchBtn;
         
-        // Click handler
+        // Click to upload
         dropzone.addEventListener('click', () => fileInput.click());
         
         // File selection
@@ -101,11 +136,12 @@ class ReverseImageSearch {
         
         dropzone.addEventListener('drop', (e) => {
             const files = e.dataTransfer.files;
-            if (files.length > 0 && files[0].type.startsWith('image/')) {
-                fileInput.files = files;
+            if (files.length > 0) {
+                // Create synthetic file input event
+                const dt = new DataTransfer();
+                Array.from(files).forEach(f => dt.items.add(f));
+                fileInput.files = dt.files;
                 fileInput.dispatchEvent(new Event('change', { bubbles: true }));
-            } else {
-                this.showStatus('❌ Please drop an image file only', 'error');
             }
         });
     }
@@ -115,19 +151,19 @@ class ReverseImageSearch {
         e.stopPropagation();
     }
     
-    async handleFileSelect(file, preview, fileName, searchBtn) {
-        // Production: File validation
+    handleFileSelect(file, preview, fileName, searchBtn) {
+        // Validation
         if (!file.type.startsWith('image/')) {
-            this.showStatus('❌ Please select an image file', 'error');
+            this.showStatus('❌ Please select an image file (JPG, PNG, GIF, WebP)', 'error');
             return;
         }
         
-        if (file.size > 8 * 1024 * 1024) { // 8MB
-            this.showStatus('❌ File too large (max 8MB)', 'error');
+        if (file.size > 8 * 1024 * 1024) {
+            this.showStatus('❌ File too large. Maximum 8MB allowed.', 'error');
             return;
         }
         
-        // Show preview
+        // Preview
         const reader = new FileReader();
         reader.onload = (e) => {
             preview.querySelector('img').src = e.target.result;
@@ -135,16 +171,17 @@ class ReverseImageSearch {
         };
         reader.readAsDataURL(file);
         
+        // Update UI
         fileName.textContent = file.name;
         preview.parentElement.parentElement.classList.add('has-file');
         searchBtn.disabled = false;
         searchBtn.querySelector('.btn-text').textContent = '🔍 Search';
         
-        this.showStatus(`✅ Selected: ${this.formatFileSize(file.size)}`, 'success');
+        this.showStatus(`✅ Ready: ${file.name} (${this.formatFileSize(file.size)})`, 'success');
     }
     
     resetFileInput(preview, fileName, searchBtn) {
-        document.getElementById('fileUpload').value = '';
+        this.elements.fileInput.value = '';
         preview.style.display = 'none';
         fileName.textContent = '';
         preview.parentElement.parentElement.classList.remove('has-file');
@@ -160,29 +197,30 @@ class ReverseImageSearch {
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
     
-    async searchByUrl(event) {
-        event.preventDefault();
-        const url = document.getElementById('urlInput').value.trim();
-        const maxResults = Math.min(parseInt(document.getElementById('maxResults').value), 50);
+    async searchByUrl() {
+        const url = this.elements.urlInput.value.trim();
+        const maxResults = Math.min(parseInt(this.elements.maxResults.value), 50);
         
         if (!url || !this.isValidUrl(url)) {
-            this.showStatus('❌ Please enter a valid image URL (http:// or https://)', 'error');
-            document.getElementById('urlInput').focus();
+            this.showStatus('❌ Please enter a valid URL starting with http:// or https://', 'error');
+            this.elements.urlInput.focus();
             return;
         }
         
         if (this.searchInProgress) return;
         
-        this.startSearch('URL', maxResults, async () => {
-            await this.executeFullSearch(url, 'url', maxResults);
-        });
+        // Create GET URL
+        const searchUrl = new URL(`${this.API_BASE}/full-search`);
+        searchUrl.searchParams.set('type', 'url');
+        searchUrl.searchParams.set('value', url);
+        searchUrl.searchParams.set('max_results', maxResults);
+        
+        await this.executeGetSearch(searchUrl.toString(), 'URL');
     }
     
-    async searchByFile(event) {
-        event.preventDefault();
-        const fileInput = document.getElementById('fileUpload');
-        const file = fileInput.files[0];
-        const maxResults = Math.min(parseInt(document.getElementById('fileMaxResults').value), 50);
+    async searchByFile() {
+        const file = this.elements.fileInput.files[0];
+        const maxResults = Math.min(parseInt(this.elements.fileMaxResults.value), 50);
         
         if (!file) {
             this.showStatus('❌ Please select a file first', 'error');
@@ -198,96 +236,79 @@ class ReverseImageSearch {
     
     async startSearch(type, maxResults, searchFunction) {
         this.searchInProgress = true;
-        this.currentSessionId = null;
+        this.searchType = type;
         
-        const progress = document.getElementById('progress');
-        const progressFill = document.getElementById('progressFill');
-        const progressText = document.getElementById('progressText');
+        const progress = this.elements.progress;
+        const progressFill = this.elements.progressFill;
+        const progressText = this.elements.progressText;
         
         progress.style.display = 'block';
-        this.updateProgress(0, 'Initializing secure search session...');
+        progressFill.style.width = '0%';
+        progressText.textContent = `🔍 Starting ${type.toLowerCase()} search...`;
         
         try {
             await searchFunction();
         } catch (error) {
-            console.error('Search error:', error);
-            this.showStatus(`❌ Search failed: ${error.message}`, 'error');
+            console.error(`${type} search error:`, error);
+            this.showStatus(`❌ ${type} search failed: ${error.message}`, 'error');
         } finally {
             this.searchInProgress = false;
-            progress.style.display = 'none';
-            progressFill.style.width = '0%';
+            setTimeout(() => {
+                progress.style.display = 'none';
+                progressFill.style.width = '0%';
+            }, 1500);
         }
     }
     
-    async executeFullSearch(url, type, maxResults) {
-        this.updateProgress(10, '🔐 Starting secure session...');
+    async executeGetSearch(searchUrl, type) {
+        const progressText = this.elements.progressText;
+        progressText.textContent = `🔍 Searching ${type.toLowerCase()}...`;
         
-        // Step 1: Initialize session
-        const startResponse = await fetch(`${this.API_BASE}/start`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-        });
-        
-        if (!startResponse.ok) {
-            throw new Error(`Session init failed: ${startResponse.status}`);
+        try {
+            // Production GET request
+            const response = await fetch(searchUrl, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                cache: 'no-cache'  // Fresh results
+            });
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`HTTP ${response.status}: ${errorText}`);
+            }
+            
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                this.displayResults(data, type);
+                
+                // Update URL for bookmarking (URL searches only)
+                if (type === 'URL') {
+                    const newUrl = new URL(searchUrl);
+                    if (data.session_id) {
+                        newUrl.searchParams.set('session_id', data.session_id);
+                    }
+                    window.history.replaceState({ searchUrl }, '', newUrl.toString());
+                }
+                
+                this.showStatus(`✅ Found ${data.results?.length || 0} results!`, 'success');
+            } else {
+                throw new Error(data.error || 'Search failed');
+            }
+            
+        } catch (error) {
+            console.error('GET search error:', error);
+            this.showStatus(`❌ ${error.message}`, 'error');
         }
-        
-        const startData = await startResponse.json();
-        if (startData.status !== 'success') {
-            throw new Error(startData.error || 'Session initialization failed');
-        }
-        
-        this.currentSessionId = startData.session_id;
-        this.showSessionInfo(startData);
-        this.updateProgress(30, '📤 Performing secure image search...');
-        
-        // Step 2: Search
-        const searchResponse = await fetch(`${this.API_BASE}/search`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                session_id: this.currentSessionId,
-                type: type,
-                value: url
-            })
-        });
-        
-        if (!searchResponse.ok) {
-            throw new Error(`Search failed: ${searchResponse.status}`);
-        }
-        
-        const searchData = await searchResponse.json();
-        if (searchData.status !== 'success') {
-            throw new Error(searchData.error || 'Search execution failed');
-        }
-        
-        this.updateProgress(60, '📊 Extracting and processing results...');
-        
-        // Step 3: Get results
-        const resultsResponse = await fetch(
-            `${this.API_BASE}/results?session_id=${this.currentSessionId}&max_results=${maxResults}`
-        );
-        
-        if (!resultsResponse.ok) {
-            throw new Error(`Results failed: ${resultsResponse.status}`);
-        }
-        
-        const resultsData = await resultsResponse.json();
-        this.displayResults(resultsData, type);
-        
-        this.updateProgress(100, `✅ Found ${resultsData.count || 0} results!`);
-        setTimeout(() => {
-            document.getElementById('progress').style.display = 'none';
-        }, 1500);
     }
     
     async executeFileSearch(file, maxResults) {
-        // Step 1: Start session (same as URL search)
-        await this.executeFullSearchStep1();
+        // Step 1: Upload file
+        this.updateProgress(25, '📤 Securely uploading your file...');
         
-        this.updateProgress(40, '📤 Securely uploading your file...');
-        
-        // Step 2: Upload file
         const formData = new FormData();
         formData.append('file', file);
         formData.append('max_results', maxResults);
@@ -303,133 +324,125 @@ class ReverseImageSearch {
         
         const uploadData = await uploadResponse.json();
         if (uploadData.status !== 'success') {
-            throw new Error(uploadData.error || 'File upload failed');
+            throw new Error(uploadData.error || 'Upload failed');
         }
         
-        // Show upload info
         this.showUploadInfo(uploadData, file.name);
-        this.updateProgress(50, '🔍 Searching with uploaded image...');
+        this.updateProgress(50, '🔍 Searching with your uploaded image...');
         
-        // Step 3: Search with temp URL
-        await this.executeFullSearch(uploadData.temp_url, 'url', maxResults);
-    }
-    
-    async executeFullSearchStep1() {
-        const startResponse = await fetch(`${this.API_BASE}/start`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-        });
+        // Step 2: GET search with temp URL
+        const searchUrl = new URL(`${this.API_BASE}/full-search`);
+        searchUrl.searchParams.set('type', 'url');
+        searchUrl.searchParams.set('value', uploadData.temp_url);
+        searchUrl.searchParams.set('max_results', maxResults);
         
-        const startData = await startResponse.json();
-        if (startData.status !== 'success') {
-            throw new Error(startData.error || 'Session initialization failed');
-        }
-        
-        this.currentSessionId = startData.session_id;
-        this.showSessionInfo(startData);
+        await this.executeGetSearch(searchUrl.toString(), 'File');
     }
     
     updateProgress(percent, text) {
-        const progressFill = document.getElementById('progressFill');
-        const progressText = document.getElementById('progressText');
+        const progressFill = this.elements.progressFill;
+        const progressText = this.elements.progressText;
         
         progressFill.style.width = `${Math.min(percent, 100)}%`;
         progressText.textContent = text;
     }
     
     showSessionInfo(data) {
-        const sessionInfo = document.getElementById('sessionInfo');
-        sessionInfo.innerHTML = `
+        this.elements.sessionInfo.innerHTML = `
             <div class="session-card">
-                <h3>🔐 Secure Session Active</h3>
+                <h3>🔐 Search Session Active</h3>
                 <div class="session-details">
-                    <div class="detail-item">
-                        <label>Session ID:</label>
-                        <code>${data.session_id}</code>
+                    <div class="detail-row">
+                        <span class="detail-label">ID:</span>
+                        <code class="detail-value">${data.session_id}</code>
                     </div>
-                    <div class="detail-item">
-                        <label>Status:</label>
+                    <div class="detail-row">
+                        <span class="detail-label">Status:</span>
                         <span class="status-badge success">${data.message}</span>
                     </div>
-                    <div class="detail-item">
-                        <label>Expires:</label>
-                        <span>${new Date(data.expires_at).toLocaleString()}</span>
+                    <div class="detail-row">
+                        <span class="detail-label">Expires:</span>
+                        <span class="detail-value">${new Date(data.expires_at).toLocaleString()}</span>
                     </div>
                 </div>
-                <small class="session-note">This session is encrypted and will auto-expire</small>
             </div>
         `;
-        sessionInfo.style.display = 'block';
-        sessionInfo.setAttribute('aria-live', 'polite');
+        this.elements.sessionInfo.style.display = 'block';
+        this.elements.sessionInfo.setAttribute('aria-live', 'polite');
     }
     
     showUploadInfo(data, originalName) {
-        const uploadInfo = document.getElementById('uploadInfo');
-        uploadInfo.innerHTML = `
+        this.elements.uploadInfo.innerHTML = `
             <div class="upload-card">
-                <h3>📤 Upload Complete</h3>
+                <h3>📤 File Uploaded Successfully</h3>
                 <div class="upload-details">
-                    <div class="detail-item">
-                        <label>Original File:</label>
-                        <span>${originalName}</span>
+                    <div class="detail-row">
+                        <span class="detail-label">Original:</span>
+                        <span class="detail-value">${originalName}</span>
                     </div>
-                    <div class="detail-item">
-                        <label>Size:</label>
-                        <span>${this.formatFileSize(data.size_bytes)}</span>
+                    <div class="detail-row">
+                        <span class="detail-label">Size:</span>
+                        <span class="detail-value">${this.formatFileSize(data.size_bytes)}</span>
                     </div>
-                    <div class="detail-item">
-                        <label>Secure URL:</label>
-                        <a href="${data.temp_url}" target="_blank" rel="noopener">${data.temp_url}</a>
+                    <div class="detail-row">
+                        <span class="detail-label">Secure URL:</span>
+                        <a href="${data.temp_url}" target="_blank" rel="noopener" class="detail-value detail-link">
+                            ${data.temp_url}
+                        </a>
                     </div>
-                    <div class="detail-item">
-                        <label>Expires:</label>
-                        <span>${new Date(data.expires_at).toLocaleString()}</span>
+                    <div class="detail-row">
+                        <span class="detail-label">Expires:</span>
+                        <span class="detail-value">${new Date(data.expires_at).toLocaleString()}</span>
                     </div>
                 </div>
             </div>
         `;
-        uploadInfo.style.display = 'block';
+        this.elements.uploadInfo.style.display = 'block';
     }
     
     displayResults(data, searchType) {
-        const resultsSection = document.getElementById('results');
-        const emptyState = document.querySelector('.results-empty');
+        const resultsSection = this.elements.results;
+        const emptyState = resultsSection.querySelector('.results-empty') || 
+                          document.createElement('div');
+        emptyState.className = 'results-empty';
         
         if (data.status === 'success') {
-            this.showStatus(`✅ Found ${data.count} similar images in ${searchType.toLowerCase()} search!`, 'success');
+            this.showStatus(`✅ Found ${data.count || 0} similar images!`, 'success');
             
             if (data.results && data.results.length > 0) {
                 emptyState.style.display = 'none';
                 resultsSection.innerHTML = `
                     <header class="results-header">
-                        <h2>Search Results</h2>
+                        <h2 aria-live="polite">Search Results</h2>
                         <div class="results-meta">
                             <span class="meta-item">${data.count} images found</span>
                             <span class="meta-item">${searchType} search</span>
-                            <span class="meta-item">${data.failed_thumbnails || 0} images unavailable</span>
+                            ${data.failed_thumbnails ? `<span class="meta-item warning">${data.failed_thumbnails} unavailable</span>` : ''}
                         </div>
                     </header>
                     <div class="results-grid" role="list">
                         ${data.results.map((result, index) => `
-                            <article class="result-card" role="listitem">
+                            <article class="result-card" role="listitem" tabindex="0">
                                 <img 
                                     src="${result.thumbnail}" 
-                                    alt="${result.description}" 
+                                    alt="${this.escapeHtml(result.description)}" 
                                     class="result-image"
                                     loading="${index < 6 ? 'eager' : 'lazy'}"
-                                    onerror="this.src='/static/images/placeholder.svg'; this.alt='Image unavailable'"
+                                    height="200"
+                                    width="100%"
+                                    onerror="this.onerror=null; this.src='/static/images/placeholder.svg'; this.alt='Image unavailable'"
                                 />
                                 <div class="result-content">
                                     <h3 class="result-title">${this.truncateText(result.description, 120)}</h3>
                                     <div class="result-meta">
-                                        <span class="meta-site">${result.sourceSite}</span>
+                                        <span class="meta-site" aria-label="Source">${this.escapeHtml(result.sourceSite)}</span>
                                     </div>
-                                    <a href="${result.pageLink}" 
+                                    <a href="${this.escapeHtml(result.pageLink)}" 
                                        target="_blank" 
                                        rel="noopener noreferrer"
                                        class="result-link"
-                                       aria-label="View full page on ${result.sourceSite}">
-                                        🔗 View on ${result.sourceSite}
+                                       aria-label="View full page on ${this.escapeHtml(result.sourceSite)}">
+                                        🔗 View on ${this.escapeHtml(result.sourceSite)}
                                     </a>
                                 </div>
                             </article>
@@ -437,94 +450,119 @@ class ReverseImageSearch {
                     </div>
                 `;
                 
-                // Production: Lazy load images
-                if ('IntersectionObserver' in window) {
-                    const imageObserver = new IntersectionObserver((entries, observer) => {
-                        entries.forEach(entry => {
-                            if (entry.isIntersecting) {
-                                const img = entry.target;
-                                img.src = img.dataset.src || img.src;
-                                img.classList.remove('lazy');
-                                observer.unobserve(img);
-                            }
-                        });
-                    });
-                    
-                    document.querySelectorAll('.result-image').forEach(img => {
-                        if (!img.complete) {
-                            imageObserver.observe(img);
+                // Keyboard navigation for results
+                document.querySelectorAll('.result-card').forEach((card, index) => {
+                    card.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            card.querySelector('.result-link')?.click();
                         }
                     });
-                }
+                });
+                
+                // Lazy loading with IntersectionObserver
+                this.initializeLazyLoading();
                 
             } else {
-                emptyState.style.display = 'block';
                 emptyState.innerHTML = `
                     <div class="empty-state">
                         <div class="empty-icon">🔍</div>
-                        <h2>No results found</h2>
-                        <p>No similar images were found for your ${searchType.toLowerCase()} search. Try a different image or adjust your search.</p>
-                        <button class="btn-secondary" onclick="app.resetSearch()">New Search</button>
+                        <h2>No Results Found</h2>
+                        <p>No similar images were found for your ${searchType.toLowerCase()} search.</p>
+                        <div class="empty-actions">
+                            <button class="btn-secondary" onclick="app.resetSearch()">New Search</button>
+                            <button class="btn-outline" onclick="app.tryDifferent()">Try Different Image</button>
+                        </div>
                     </div>
                 `;
+                emptyState.style.display = 'block';
+                resultsSection.innerHTML = '';
+                resultsSection.appendChild(emptyState);
             }
         } else {
-            this.showStatus(`❌ ${data.error || 'Search failed. Please try again.'}`, 'error');
-            emptyState.style.display = 'block';
+            this.showStatus(`❌ ${data.error || 'Search failed'}`, 'error');
             emptyState.innerHTML = `
                 <div class="empty-state error-state">
                     <div class="empty-icon">⚠️</div>
                     <h2>Search Error</h2>
                     <p>${data.error || 'An unexpected error occurred.'}</p>
-                    <button class="btn-secondary" onclick="app.resetSearch()">Try Again</button>
+                    <div class="empty-actions">
+                        <button class="btn-secondary" onclick="app.resetSearch()">Try Again</button>
+                        <a href="/health" target="_blank" class="btn-outline">Check Status</a>
+                    </div>
                 </div>
             `;
+            emptyState.style.display = 'block';
+            resultsSection.innerHTML = '';
+            resultsSection.appendChild(emptyState);
+        }
+    }
+    
+    initializeLazyLoading() {
+        if ('IntersectionObserver' in window) {
+            const imageObserver = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        const img = entry.target;
+                        if (img.dataset.src) {
+                            img.src = img.dataset.src;
+                            img.removeAttribute('data-src');
+                        }
+                        img.classList.remove('lazy');
+                        imageObserver.unobserve(img);
+                    }
+                });
+            }, {
+                rootMargin: '50px'
+            });
+            
+            document.querySelectorAll('img.lazy').forEach(img => {
+                imageObserver.observe(img);
+            });
         }
     }
     
     showStatus(message, type = 'info') {
-        const status = document.getElementById('status');
+        const status = this.elements.status;
         status.textContent = message;
         status.className = `status-message ${type} show`;
         status.setAttribute('role', 'alert');
-        status.setAttribute('aria-live', 'assertive');
+        status.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
         
-        // Auto-dismiss non-error messages
         if (type !== 'error') {
-            setTimeout(() => {
-                status.classList.remove('show');
-            }, 5000);
+            setTimeout(() => status.classList.remove('show'), 5000);
         }
     }
     
     showEmptyState() {
-        const results = document.getElementById('results');
-        const emptyState = document.querySelector('.results-empty') || 
-                          document.createElement('div');
+        const results = this.elements.results;
+        const emptyState = document.createElement('div');
         emptyState.className = 'results-empty';
         emptyState.innerHTML = `
             <div class="empty-state">
                 <div class="empty-icon">🔍</div>
-                <h2>Ready to search</h2>
-                <p>Paste an image URL or upload a file to begin your reverse image search. Our system uses secure, encrypted sessions for privacy.</p>
+                <h2>Ready to Search</h2>
+                <p>Enter an image URL above or switch to the upload tab to begin your reverse image search.</p>
+                <p class="empty-hint"><strong>Pro Tip:</strong> Bookmark this page - your searches are shareable!</p>
             </div>
         `;
         results.innerHTML = '';
         results.appendChild(emptyState);
-        emptyState.style.display = 'block';
     }
     
     resetSearchState() {
         this.currentSessionId = null;
-        document.getElementById('sessionInfo').style.display = 'none';
-        document.getElementById('uploadInfo').style.display = 'none';
-        document.getElementById('status').classList.remove('show');
+        this.elements.sessionInfo.style.display = 'none';
+        this.elements.uploadInfo.style.display = 'none';
+        this.elements.status.classList.remove('show');
         this.searchInProgress = false;
+        this.elements.urlSearchBtn.disabled = false;
+        this.elements.fileSearchBtn.disabled = true;
     }
     
     isValidUrl(string) {
         try {
-            const url = new URL(string);
+            const url = new URL(string.startsWith('http') ? string : 'https://' + string);
             return url.protocol === 'http:' || url.protocol === 'https:';
         } catch {
             return false;
@@ -532,124 +570,127 @@ class ReverseImageSearch {
     }
     
     truncateText(text, maxLength) {
-        return text.length > maxLength ? text.slice(0, maxLength).trim() + '...' : text;
+        if (!text) return '';
+        return text.length > maxLength ? `${text.slice(0, maxLength).trim()}...` : text;
+    }
+    
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
     
     handleKeyboard(e) {
         if (this.searchInProgress) return;
         
         // Enter in URL input
-        if (e.key === 'Enter' && document.activeElement.id === 'urlInput') {
+        if (e.key === 'Enter' && document.activeElement === this.elements.urlInput) {
             e.preventDefault();
-            this.searchByUrl({ preventDefault: () => {} });
+            this.searchByUrl();
         }
         
-        // Ctrl+Enter in file input area
-        if (e.key === 'Enter' && e.ctrlKey && 
-            (document.activeElement.id === 'fileUpload' || 
-             document.activeElement.closest('#fileTab'))) {
+        // Ctrl+Enter for file search
+        if (e.key === 'Enter' && e.ctrlKey && document.activeElement.closest('#fileTab')) {
             e.preventDefault();
-            this.searchByFile({ preventDefault: () => {} });
+            this.searchByFile();
         }
         
         // Escape to reset
         if (e.key === 'Escape') {
+            e.preventDefault();
             this.resetSearchState();
             this.showEmptyState();
             document.querySelector('.tab-btn.active').focus();
         }
     }
     
-    focusFirstInput() {
-        // Focus first available input
-        const firstInput = document.querySelector('#urlInput');
-        if (firstInput) {
-            firstInput.focus();
-            firstInput.setAttribute('autofocus', true);
+    handleResize() {
+        // Production: Handle responsive layout changes
+        const resultsGrid = document.querySelector('.results-grid');
+        if (resultsGrid) {
+            // Recalculate grid if needed
+            resultsGrid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(300px, 1fr))';
         }
     }
     
-    preloadImages() {
-        // Production: Preload critical images
+    focusFirstInput() {
+        // Focus URL input by default
+        this.elements.urlInput.focus();
+    }
+    
+    preloadCriticalResources() {
+        // Preload essential images
         const criticalImages = [
             '/static/images/placeholder.svg',
-            'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjE4MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjBmMGYwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkltYWdlIGxvYWRpbmc8L3RleHQ+PC9zdmc+'
+            'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjBmMGYwIiBvcGFjaXR5PSIwLjMiLz48L3N2Zz4='
         ];
         
         criticalImages.forEach(src => {
-            const img = new Image();
-            img.src = src;
+            const link = document.createElement('link');
+            link.rel = 'preload';
+            link.as = 'image';
+            link.href = src;
+            document.head.appendChild(link);
         });
     }
     
-    showApiDocs() {
-        // Production: Show inline API docs
-        const docs = document.createElement('div');
-        docs.className = 'api-docs';
-        docs.innerHTML = `
-            <div class="modal-overlay" onclick="this.remove()">
-                <div class="modal-content" onclick="event.stopPropagation()">
-                    <h2>API Documentation</h2>
-                    <div class="api-section">
-                        <h3>Endpoints</h3>
-                        <ul>
-                            <li><strong>GET/POST /start</strong> - Initialize search session (10/min)</li>
-                            <li><strong>POST /search</strong> - Upload image (5/min)</li>
-                            <li><strong>GET /results</strong> - Extract results (5/min)</li>
-                            <li><strong>GET/POST /full-search</strong> - Complete flow (3/min)</li>
-                            <li><strong>POST /upload</strong> - File upload (10/min)</li>
-                        </ul>
-                    </div>
-                    <div class="api-section">
-                        <h3>Example Usage</h3>
-                        <pre><code>curl -X POST http://{{ request.host }}/full-search \\
-  -H "Content-Type: application/json" \\
-  -d '{"type":"url","value":"https://example.com/image.jpg"}'</code></pre>
-                    </div>
-                    <button class="btn-close" onclick="this.closest('.modal-content').parentElement.remove()">Close</button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(docs);
-    }
-}
-
-// Production: Error boundary
-window.addEventListener('error', (e) => {
-    console.error('Global error:', e.error);
-    // In production, send to error tracking service
-});
-
-// Production: Performance monitoring
-if ('performance' in window) {
-    window.addEventListener('load', () => {
-        const navigation = performance.getEntriesByType('navigation')[0];
-        console.log('Navigation timing:', {
-            type: navigation.type,
-            duration: Math.round(navigation.loadEventEnd - navigation.loadEventStart),
-            transferSize: navigation.transferSize
-        });
-    });
-}
-
-// Initialize when DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
-    window.app = new ReverseImageSearch();
-    
-    // Production: Service Worker registration
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js')
-            .then(reg => console.log('SW registered:', reg))
-            .catch(err => console.log('SW registration failed:', err));
-    }
-});
-
-// Production: Handle page visibility
-document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-        // Pause any ongoing operations
-        if (window.app && window.app.searchInProgress) {
-            console.log('Page hidden during search');
+    initializeFromURL() {
+        // Auto-search from URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const value = urlParams.get('value') || urlParams.get('url');
+        const type = urlParams.get('type') || 'url';
+        
+        if (value && (type === 'url' || type === 'file')) {
+            this.showStatus('🔍 Auto-starting search from URL...', 'info');
+            
+            const maxResults = parseInt(urlParams.get('max_results') || '20');
+            
+            setTimeout(() => {
+                if (type === 'url' && this.isValidUrl(value)) {
+                    this.elements.urlInput.value = value;
+                    this.elements.maxResults.value = maxResults;
+                    this.searchByUrl();
+                }
+                // File auto-search would need the temp URL
+            }, 800);
         }
     }
+}
+
+// Global app instance
+let app;
+
+document.addEventListener('DOMContentLoaded', () => {
+    app = new ReverseImageSearch();
+    
+    // Production: Performance monitoring
+    if (performance && performance.mark) {
+        performance.mark('app-ready');
+    }
+    
+    // Service Worker (progressive web app)
+    if ('serviceWorker' in navigator && location.protocol === 'https:') {
+        navigator.serviceWorker.register('/sw.js')
+            .then(reg => console.log('SW registered'))
+            .catch(err => console.log('SW failed:', err));
+    }
 });
+
+// Global error handling
+window.addEventListener('error', (e) => {
+    console.error('Global error:', e.error);
+    // Production: Send to error tracking
+    if (app) {
+        app.showStatus('⚠️ An unexpected error occurred', 'error');
+    }
+});
+
+// Handle page visibility
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden && app?.searchInProgress) {
+        console.log('Search paused - tab hidden');
+    }
+});
+
+// Export for template access
+window.app = app;
