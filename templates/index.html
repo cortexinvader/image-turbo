@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🕵️ Reverse Image Search</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        h1 {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .search-section {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        .tab-buttons {
+            display: flex;
+            margin-bottom: 25px;
+            border-bottom: 2px solid #eee;
+        }
+        
+        .tab-btn {
+            flex: 1;
+            padding: 12px 20px;
+            background: none;
+            border: none;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border-bottom: 3px solid transparent;
+        }
+        
+        .tab-btn.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+            font-weight: 600;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .url-input-group, .file-input-group {
+            display: flex;
+            gap: 15px;
+            align-items: end;
+            margin-bottom: 20px;
+        }
+        
+        #urlInput {
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+        
+        #urlInput:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        #fileInput {
+            flex: 1;
+            padding: 12px;
+            border: 2px dashed #ddd;
+            border-radius: 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        #fileInput:hover, #fileInput.dragover {
+            border-color: #667eea;
+            background: #f8f9ff;
+        }
+        
+        #fileInput.has-file {
+            border-color: #4caf50;
+            background: #f0f8f0;
+        }
+        
+        #fileInput::file-selector-button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        
+        .results-input-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .results-input-group label {
+            font-weight: 600;
+            color: #555;
+        }
+        
+        #maxResults {
+            width: 80px;
+            padding: 8px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            text-align: center;
+        }
+        
+        .search-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 14px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+        
+        .search-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .search-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .status {
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin: 20px 0;
+            font-weight: 500;
+            display: none;
+        }
+        
+        .status.info { background: #e3f2fd; color: #1976d2; border-left: 4px solid #2196f3; }
+        .status.success { background: #e8f5e8; color: #2e7d32; border-left: 4px solid #4caf50; }
+        .status.error { background: #ffebee; color: #c62828; border-left: 4px solid #f44336; }
+        .status.show { display: block; animation: slideIn 0.3s ease; }
+        
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .upload-info {
+            background: #f0f8ff;
+            border: 1px solid #b3d9ff;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        
+        .upload-info h4 {
+            color: #1976d2;
+            margin-bottom: 8px;
+        }
+        
+        .upload-info p {
+            margin: 4px 0;
+            font-size: 14px;
+        }
+        
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+        
+        .result-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+            border: 1px solid #eee;
+        }
+        
+        .result-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        }
+        
+        .result-image {
+            width: 100%;
+            height: 180px;
+            object-fit: cover;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        
+        .result-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+            line-height: 1.4;
+        }
+        
+        .result-meta {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 12px;
+        }
+        
+        .result-link {
+            display: inline-block;
+            color: #667eea;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            padding: 6px 12px;
+            background: #f8f9ff;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+        }
+        
+        .result-link:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+        
+        .empty-state img {
+            width: 120px;
+            opacity: 0.5;
+            margin-bottom: 20px;
+        }
+        
+        @media (max-width: 768px) {
+            .container { padding: 10px; }
+            h1 { font-size: 2em; }
+            .search-section { padding: 20px; }
+            .url-input-group, .file-input-group { flex-direction: column; align-items: stretch; }
+            .results-grid { grid-template-columns: 1fr; }
+            .tab-buttons { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🕵️ Reverse Image Search</h1>
+        
+        <div class="search-section">
+            <div class="tab-buttons">
+                <button class="tab-btn active" onclick="switchTab('url')">🌐 URL Search</button>
+                <button class="tab-btn" onclick="switchTab('file')">📁 File Upload</button>
+            </div>
+            
+            <!-- URL Tab -->
+            <div id="urlTab" class="tab-content active">
+                <div class="url-input-group">
+                    <input type="url" id="urlInput" placeholder="https://example.com/image.jpg" />
+                    <button class="search-btn" onclick="searchByUrl()">🔍 Search</button>
+                </div>
+                <div class="results-input-group">
+                    <label for="maxResults">Max Results:</label>
+                    <input type="number" id="maxResults" value="20" min="1" max="50" />
+                </div>
+            </div>
+            
+            <!-- File Tab -->
+            <div id="fileTab" class="tab-content">
+                <div class="file-input-group">
+                    <div id="fileInput">
+                        <input type="file" id="fileUpload" accept="image/*" style="display: none;" />
+                        <p>📁 Click to select image or drag & drop</p>
+                        <p id="fileName" style="font-weight: 600; color: #4caf50; margin-top: 8px;"></p>
+                    </div>
+                    <button class="search-btn" id="fileSearchBtn" onclick="searchByFile()" disabled>🔍 Search</button>
+                </div>
+                <div class="results-input-group">
+                    <label for="fileMaxResults">Max Results:</label>
+                    <input type="number" id="fileMaxResults" value="20" min="1" max="50" />
+                </div>
+            </div>
+        </div>
+        
+        <div id="status"></div>
+        <div id="uploadInfo" style="display: none;"></div>
+        <div id="results"></div>
+    </div>
+
+    <script>
+        // API Configuration
+        const API_BASE = ''; 
+        
+        // Tab Management
+        function switchTab(tab) {
+            // Update buttons
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            // Update content
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            document.getElementById(tab + 'Tab').classList.add('active');
+            
+            // Reset inputs
+            if (tab === 'url') {
+                document.getElementById('urlInput').focus();
+            } else {
+                document.getElementById('fileUpload').focus();
+            }
+        }
+        
+        // Status Management
+        function showStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type} show`;
+            
+            // Auto-hide info/success after 3 seconds
+            if (type === 'info' || type === 'success') {
+                setTimeout(() => {
+                    statusDiv.classList.remove('show');
+                }, 3000);
+            }
+        }
+        
+        function hideStatus() {
+            document.getElementById('status').classList.remove('show');
+        }
+        
+        // File Upload Handling
+        const fileInput = document.getElementById('fileUpload');
+        const fileDisplay = document.getElementById('fileInput');
+        const fileNameDisplay = document.getElementById('fileName');
+        const fileSearchBtn = document.getElementById('fileSearchBtn');
+        
+        // Click to upload
+        fileDisplay.addEventListener('click', () => fileInput.click());
+        
+        // File selection
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                fileNameDisplay.textContent = file.name;
+                fileDisplay.classList.add('has-file');
+                fileSearchBtn.disabled = false;
+                fileSearchBtn.textContent = '🔍 Search';
+                showStatus(`✅ Selected: ${file.name}`, 'success');
+            } else {
+                resetFileInput();
+            }
+        });
+        
+        // Drag & Drop
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            fileDisplay.addEventListener(eventName, preventDefaults, false);
+        });
+        
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        
+        ['dragenter', 'dragover'].forEach(eventName => {
+            fileDisplay.addEventListener(eventName, highlight, false);
+        });
+        
+        ['dragleave', 'drop'].forEach(eventName => {
+            fileDisplay.addEventListener(eventName, unhighlight, false);
+        });
+        
+        function highlight(e) {
+            fileDisplay.classList.add('dragover');
+        }
+        
+        function unhighlight(e) {
+            fileDisplay.classList.remove('dragover');
+        }
+        
+        fileDisplay.addEventListener('drop', handleDrop, false);
+        
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            
+            if (files.length > 0 && files[0].type.startsWith('image/')) {
+                fileInput.files = files;
+                fileInput.dispatchEvent(new Event('change'));
+            } else {
+                showStatus('❌ Please drop an image file', 'error');
+            }
+        }
+        
+        function resetFileInput() {
+            fileInput.value = '';
+            fileNameDisplay.textContent = '';
+            fileDisplay.classList.remove('has-file');
+            fileSearchBtn.disabled = true;
+            fileSearchBtn.textContent = '🔍 Select File First';
+        }
+        
+        // URL Search
+        async function searchByUrl() {
+            const url = document.getElementById('urlInput').value.trim();
+            const maxResults = parseInt(document.getElementById('maxResults').value);
+            
+            if (!url) {
+                showStatus('❌ Please enter an image URL', 'error');
+                document.getElementById('urlInput').focus();
+                return;
+            }
+            
+            if (!isValidUrl(url)) {
+                showStatus('❌ Please enter a valid URL starting with http:// or https://', 'error');
+                return;
+            }
+            
+            const searchBtn = event.target;
+            const originalText = searchBtn.textContent;
+            searchBtn.disabled = true;
+            searchBtn.textContent = '🔍 Searching...';
+            
+            hideStatus();
+            document.getElementById('uploadInfo').style.display = 'none';
+            document.getElementById('results').innerHTML = '<div class="status info show">🔍 Searching for similar images...</div>';
+            
+            try {
+                const response = await fetch(`${API_BASE}/search?url=${encodeURIComponent(url)}&max_results=${maxResults}`);
+                const data = await response.json();
+                
+                displayResults(data, 'URL');
+                
+            } catch (error) {
+                showStatus(`❌ Network error: ${error.message}`, 'error');
+                console.error('Search error:', error);
+            } finally {
+                searchBtn.disabled = false;
+                searchBtn.textContent = originalText;
+            }
+        }
+        
+        // File Search
+        async function searchByFile() {
+            const fileInput = document.getElementById('fileUpload');
+            const file = fileInput.files[0];
+            const maxResults = parseInt(document.getElementById('fileMaxResults').value);
+            
+            if (!file) {
+                showStatus('❌ Please select a file first', 'error');
+                return;
+            }
+            
+            const searchBtn = event.target;
+            const originalText = searchBtn.textContent;
+            searchBtn.disabled = true;
+            searchBtn.textContent = '📤 Uploading...';
+            
+            hideStatus();
+            document.getElementById('uploadInfo').style.display = 'none';
+            document.getElementById('results').innerHTML = '<div class="status info show">📤 Uploading and searching...</div>';
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('max_results', maxResults);
+            
+            try {
+                const response = await fetch(`${API_BASE}/search`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                displayResults(data, 'File');
+                
+            } catch (error) {
+                showStatus(`❌ Upload error: ${error.message}`, 'error');
+                console.error('Upload error:', error);
+            } finally {
+                searchBtn.disabled = false;
+                searchBtn.textContent = originalText;
+            }
+        }
+        
+        // Results Display
+        function displayResults(data, searchType) {
+            const resultsDiv = document.getElementById('results');
+            const uploadInfoDiv = document.getElementById('uploadInfo');
+            
+            if (data.status === 'success') {
+                showStatus(`✅ Found ${data.count} similar images!`, 'success');
+                
+                // Show upload info for file searches
+                if (data.upload_info && searchType === 'File') {
+                    uploadInfoDiv.innerHTML = `
+                        <div class="upload-info">
+                            <h4>📤 Upload Details</h4>
+                            <p><strong>Original File:</strong> ${data.upload_info.original_filename}</p>
+                            <p><strong>Temp URL:</strong> <a href="${data.upload_info.temp_url}" target="_blank">${data.upload_info.temp_url}</a></p>
+                            <p><em>Available for 1 hour</em></p>
+                        </div>
+                    `;
+                    uploadInfoDiv.style.display = 'block';
+                } else {
+                    uploadInfoDiv.style.display = 'none';
+                }
+                
+                // Display results
+                if (data.results && data.results.length > 0) {
+                    resultsDiv.innerHTML = `
+                        <div class="results-grid">
+                            ${data.results.map((result, index) => `
+                                <div class="result-card">
+                                    <img src="${result.thumbnail}" alt="${result.description}" class="result-image" 
+                                         loading="lazy" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjE4MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjBmMGYwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkltYWdlIG5vdCBhdmFpbGFibGU8L3RleHQ+PC9zdmc+' />
+                                    <div class="result-title">${result.description}</div>
+                                    <div class="result-meta">
+                                        <strong>Site:</strong> ${result.sourceSite}
+                                    </div>
+                                    <a href="${result.pageLink}" target="_blank" class="result-link">
+                                        🔗 View on ${result.sourceSite}
+                                    </a>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                } else {
+                    resultsDiv.innerHTML = `
+                        <div class="empty-state">
+                            <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSI2MCIgY3k9IjQwIiByPSIxOCIgZmlsbD0iIzk5OSIgc3Ryb2tlPSIjY2NjIiBzdHJva2Utd2lkdGg9IjIiLz48Y2lyY2xlIGN4PSI0MCIgY3k9IjcwIiByPSIxMCIgZmlsbD0iIzk5OSIgc3Ryb2tlPSIjY2NjIiBzdHJva2Utd2lkdGg9IjEiLz48Y2lyY2xlIGN4PSI4MCIgY3k9IjcwIiByPSIxMCIgZmlsbD0iIzk5OSIgc3Ryb2tlPSIjY2NjIiBzdHJva2Utd2lkdGg9IjEiLz48cGF0aCBkPSJNMzIgODBjMTIgMTIgMzIgNSAyMCAxMHM4LTIgOC01eiIgZmlsbD0iIzk5OSIgc3Ryb2tlPSIjY2NjIiBzdHJva2Utd2lkdGg9IjEiLz48L3N2Zz4=" alt="Search">
+                            <h3>No results found</h3>
+                            <p>No similar images were found for your ${searchType.toLowerCase()} search.</p>
+                        </div>
+                    `;
+                }
+                
+            } else {
+                showStatus(`❌ ${data.error || 'Search failed'}`, 'error');
+                resultsDiv.innerHTML = '';
+                uploadInfoDiv.style.display = 'none';
+            }
+        }
+        
+        // Utility Functions
+        function isValidUrl(string) {
+            try {
+                new URL(string);
+                return string.startsWith('http://') || string.startsWith('https://');
+            } catch (_) {
+                return false;
+            }
+        }
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            // Enter in URL input
+            if (e.key === 'Enter' && document.activeElement === document.getElementById('urlInput')) {
+                e.preventDefault();
+                searchByUrl();
+            }
+            
+            // Ctrl+Enter for file search
+            if (e.key === 'Enter' && e.ctrlKey && document.activeElement === document.getElementById('fileUpload')) {
+                e.preventDefault();
+                searchByFile();
+            }
+        });
+        
+        // Auto-focus on load
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('urlInput').focus();
+        });
+    </script>
+</body>
+</html>
