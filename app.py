@@ -31,31 +31,13 @@ options.add_argument("--disable-software-rasterizer")
 service = Service(chromedriver_bin)
 driver = webdriver.Chrome(service=service, options=options)
 
-@app.route('/')
-def index():
-    try:
-        driver.get("https://chat-with-kora.onrender.com")
-        title = driver.title
-        # Here, any login/cookie will persist between requests!
-        return jsonify({"google_title": title})
-    except Exception as e:
-        return jsonify({
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }), 500
+"""
+===== OTHER STUFFS =====
+• ROUTES
+• FUNCTIONS (SCREENSHORT, CLICK, ETC)
+========================
 
-@app.route('/quit')
-def quit_browser():
-    global driver
-    try:
-        if driver:
-            driver.quit()
-            driver = None
-            return jsonify({"message": "Browser session quit."})
-        else:
-            return jsonify({"message": "No active browser session."}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+"""
 
 if __name__ == '__main__':
     print("Chromium version:", get_binary_version(chrome_bin))
