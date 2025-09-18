@@ -528,4 +528,288 @@ def api_full_search():
             value = data.get('value') or data.get('url')
             max_results = data.get('max_results', 20)
             session_id = data.get('session_id')
-      
+        
+        if not value:
+            return jsonify({
+                "error": "Missing 'value'",
+                "get_example": "/full-search?value=https://example.com/image.jpg",
+                "post_example": "{'value': 'https://example.com/image.jpg'}"
+            }), 400
+        
+        if max_results > 50:
+            max_results = 50
+        
+        if search_type not in ['url', 'file']:
+            return jsonify({"error": "Type must be 'url' or 'file'"}), 400
+        
+        # Handle file uploads (POST only)
+        search_value = value
+        upload_info = None
+        
+        if search_type == 'file':
+            if request.method != 'POST' or 'file' not in request.files:
+                return jsonify({
+                    "error": "File uploads require POST multipart",
+                    "usage": "POST /full-search -F 'file=@image.jpg'"
+                }), 400
+            
+            file = request.files['file']
+            if not file or file.filename == '':
+                return jsonify({"error": "No file selected"}), 400
+            
+            dummy_url, upload_result = handle_file_upload(file)
+            if not dummy_url:
+                return jsonify(upload_result), 400
+            
+            search_value = dummy_url
+            upload_info = upload_result
+        
+        # Validate URL
+        if search_type == 'url' and not (search_value.startswith('http://') or search_value.startswith('https://')):
+            return jsonify({
+                "error": "URL must start with http:// or https://",
+                "example": "/full-search?value=https://picsum.photos/400/300"
+            }), 400
+        
+        # Start session
+        if not session_id:
+            start_result = start()
+            if "error" in start_result:
+                return jsonify(start_result), 500
+            session_id = start_result["session_id"]
+        else:
+            start_result = {
+                "status": "success",
+                "session_id": session_id,
+                "message": "Using existing session"
+            }
+        
+        # Search
+        search_result = imgSch(session_id, 'url', search_value)
+        if "error" in search_result:
+            return jsonify(search_result), 500
+        
+        # Results
+        results = getImg(max_results=max_results)
+        
+        response_data = {
+            "status": "success",
+            "session_id": session_id,
+            "type": search_type,
+            "search_value": search_value,
+            "start": start_result,
+            "search": search_result,
+            "results": results
+        }
+        
+        if upload_info:
+            response_data["upload_info"] = upload_info
+        
+        response = jsonify(response_data)
+        
+        # GET caching
+        if request.method == 'GET':
+            cache_duration = 1800 if search_type == 'url' else 300
+            response.headers['Cache-Control'] = f'public, max-age={cache_duration}'
+            response.headers['Vary'] = 'type,value'
+        
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        return response, 200
+        
+    except Exception as e:
+        logging.error(f"Full search error: {e}")
+        return jsonify({"error": "Server error"}), 500
+
+@app.route('/upload', methods=['GET', 'POST'])
+@limiter.limit("10/minute")
+def api_upload():
+    """Upload endpoint with GET docs"""
+    try:
+        if request.method == 'GET':
+            return jsonify({
+                "usage": "POST multipart/form-data with 'file' field",
+                "max_size": "8MB",
+                "allowed_types": list(ALLOWED_EXTENSIONS),
+                "example": "curl -X POST -F 'file=@image.jpg' /upload",
+                "response_format": {
+                    "status": "success",
+                    "upload_id": "uuid-string",
+                    "temp_url": "https://domain.com/temp/uuid",
+                    "filename": "original.jpg",
+                    "size_bytes": 123456,
+                    "expires_at": "2024-01-01T12:00:00Z"
+                }
+            }), 200
+        
+        if 'file' not in request.files:
+            return jsonify({"error": "No file provided"}), 400
+        
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({"error": "No file selected"}), 400
+        
+        dummy_url, upload_result = handle_file_upload(file)
+        if not dummy_url:
+            return jsonify(upload_result), 400
+        
+        response = jsonify(upload_result)
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        return response, 200
+        
+    except Exception as e:
+        logging.error(f"Upload error: {e}")
+        return jsonify({"error": "Upload failed"}), 500
+
+@app.route('/serve/<path:filename>')
+def serve_image(filename):
+    """Secure image serving"""
+    try:
+        if not (filename.endswith('.jpg') or filename.endswith('.png')):
+            return "Invalid file", 403
+        
+        filepath = os.path.join(UPLOAD_FOLDER, filename)
+        if not os.path.abspath(filepath).startswith(os.path.abspath(UPLOAD_FOLDER)):
+            return "Access denied", 403
+        
+        if not os.path.exists(filepath):
+            return "Not found", 404
+        
+        response = send_from_directory(UPLOAD_FOLDER, filename, max_age=3600)
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Cache-Control'] = 'public, max-age=3600'
+        return response
+        
+    except Exception as e:
+        logging.error(f"Serve error: {e}")
+        return "Server error", 500
+
+@app.route('/temp/<upload_id>')
+def serve_temp_upload(upload_id):
+    """Temp file serving"""
+    try:
+        if upload_id not in temp_uploads:
+            return jsonify({"error": "Not found"}), 404
+        
+        info = temp_uploads[upload_id]
+        if datetime.now() > info["expires"]:
+            try:
+                if os.path.exists(info["path"]):
+                    os.unlink(info["path"])
+                del temp_uploads[upload_id]
+            except:
+                pass
+            return jsonify({"error": "Expired"}), 404
+        
+        filepath = os.path.join(TEMP_UPLOAD_FOLDER, os.path.basename(info["path"]))
+        if not os.path.abspath(filepath).startswith(os.path.abspath(TEMP_UPLOAD_FOLDER)):
+            return "Access denied", 403
+        
+        response = send_from_directory(
+            TEMP_UPLOAD_FOLDER, 
+            os.path.basename(info["path"]), 
+            max_age=3600
+        )
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        return response
+        
+    except Exception as e:
+        logging.error(f"Temp serve error: {e}")
+        return jsonify({"error": "Server error"}), 500
+
+@app.route('/health', methods=['GET'])
+def health():
+    """Production health check"""
+    cleanup_temp_uploads()
+    
+    disk_usage = sum(os.path.getsize(os.path.join(UPLOAD_FOLDER, f)) 
+                    for f in os.listdir(UPLOAD_FOLDER) 
+                    if os.path.isfile(os.path.join(UPLOAD_FOLDER, f)))
+    
+    temp_usage = sum(info["size_bytes"] for info in temp_uploads.values())
+    
+    return jsonify({
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "base_url": BASE_URL,
+        "storage": {
+            "thumbnails": len(os.listdir(UPLOAD_FOLDER)),
+            "thumbnails_size_mb": round(disk_usage / (1024*1024), 1),
+            "temp_uploads": len(temp_uploads),
+            "temp_size_mb": round(temp_usage / (1024*1024), 1)
+        },
+        "endpoints": {
+            "frontend": "GET /",
+            "start": "GET /start",
+            "search": "GET/POST /search",
+            "results": "GET /results",
+            "full-search": "GET/POST /full-search",
+            "upload": "POST /upload"
+        },
+        "limits": {
+            "start": "10/minute",
+            "search": "5/minute",
+            "full-search": "3/minute",
+            "upload": "10/minute"
+        }
+    })
+
+@app.route('/metrics', methods=['GET'])
+def metrics():
+    """Prometheus metrics"""
+    cleanup_temp_uploads()
+    
+    disk_usage = sum(os.path.getsize(os.path.join(UPLOAD_FOLDER, f)) 
+                    for f in os.listdir(UPLOAD_FOLDER) 
+                    if os.path.isfile(os.path.join(UPLOAD_FOLDER, f)))
+    
+    temp_usage = sum(info["size_bytes"] for info in temp_uploads.values())
+    
+    metrics = [
+        '# HELP reverse_image_search_requests_total Total requests',
+        '# TYPE reverse_image_search_requests_total counter',
+        f'reverse_image_search_requests_total {{type="total"}} {len(sessions) + len(temp_uploads)}',
+        f'# HELP reverse_image_search_storage_bytes Storage usage',
+        '# TYPE reverse_image_search_storage_bytes gauge',
+        f'reverse_image_search_storage_bytes {{type="thumbnails"}} {disk_usage}',
+        f'reverse_image_search_storage_bytes {{type="temp"}} {temp_usage}',
+        f'# HELP reverse_image_search_sessions_active Active sessions',
+        '# TYPE reverse_image_search_sessions_active gauge',
+        f'reverse_image_search_sessions_active {len(sessions)}',
+        f'# HELP reverse_image_search_uploads_active Active uploads',
+        '# TYPE reverse_image_search_uploads_active gauge',
+        f'reverse_image_search_uploads_active {len(temp_uploads)}'
+    ]
+    
+    return '\n'.join(metrics), 200, {'Content-Type': 'text/plain; version=0.0.4'}
+
+# Error handlers
+@app.errorhandler(413)
+def too_large(e):
+    return jsonify({"error": "File too large (max 8MB)"}), 413
+
+@app.errorhandler(429)
+def ratelimit_handler(e):
+    return jsonify({"error": "Rate limit exceeded. Please wait."}), 429
+
+@app.errorhandler(500)
+def internal_error(e):
+    return jsonify({"error": "Internal server error"}), 500
+
+def scheduled_cleanup():
+    """Background cleanup"""
+    while True:
+        time.sleep(300)  # 5 minutes
+        cleanup_temp_uploads()
+
+if __name__ == '__main__':
+    cleanup_temp_uploads()
+    
+    # Start cleanup thread
+    if not app.debug:
+        cleanup_thread = threading.Thread(target=scheduled_cleanup, daemon=True)
+        cleanup_thread.start()
+    
+    host = os.environ.get('HOST', '0.0.0.0')
+    port = int(os.environ.get('PORT', 10000))
+    
+    app.run(host=host, port=port, debug=app.debug, threaded=True)
