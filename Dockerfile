@@ -1,24 +1,41 @@
 FROM python:3.11-slim
 
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+# Production dependencies
+RUN apt-get update && apt-get install -y \
+    wget \
+    gnupg \
+    unzip \
+    xvfb \
+    && wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
+    && sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list' \
+    && apt-get update \
+    && apt-get install -y google-chrome-stable \
+    && apt-get install -y chromium chromium-driver \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install dependencies
-RUN apt-get update && apt-get install -y \
-    wget unzip curl gnupg ca-certificates fonts-liberation \
-    libnss3 libxss1 libappindicator3-1 libasound2 libatk-bridge2.0-0 libgtk-3-0 libx11-xcb1 \
-    chromium chromium-driver \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# Set environment variables for Chrome and Chromedriver binaries
-ENV CHROME_BIN=/usr/bin/chromium
-ENV CHROMEDRIVER_BIN=/usr/bin/chromedriver
-
+# Production Python environment
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy production code
 COPY . .
 
-CMD ["python", "app.py"]
+# Production environment variables
+ENV FLASK_ENV=production \
+    PYTHONUNBUFFERED=1 \
+    CHROME_BIN=/usr/bin/chromium \
+    CHROMEDRIVER_BIN=/usr/bin/chromedriver
+
+# Production user
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+USER appuser
+
+EXPOSE 10000
+
+# Production health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:10000/health || exit 1
+
+CMD ["gunicorn", "--bind", "0.0.0.0:10000", "--workers", "2", "--worker-class", "gevent", "--timeout", "120", "--log-level", "info", "app:app"]
