@@ -1,4 +1,6 @@
-flask
+Flask
+Flask-Limiter
 selenium
-webdriver-manager
-
+requests
+Werkzeug
+gunicorn
