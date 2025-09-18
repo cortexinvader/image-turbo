@@ -4,7 +4,7 @@ import uuid
 import base64
 import time
 import requests
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory,render_template
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -293,7 +293,9 @@ def search_by_file_upload(file, max_results=20):
             except:
                 pass
         return {"error": f"Search failed after upload: {str(e)}"}
-
+@app.route('/')
+def house():
+    return render_template('index.html')
 # Flask Routes - CLEAR PATHS!
 @app.route('/search', methods=['GET', 'POST'])
 def api_search():
