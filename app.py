@@ -120,8 +120,8 @@ JS_SNIPPET_1 = """
 
 JS_SNIPPET_2 = """
 (() => {
-  const el = document.querySelector("body > div.L3eUgb > div.o3j99.ikrT4e.om7nvf > form > div:nth-child(1) > div.A8SBwf > div.RNNXgb > div.SDkEP > div.fM33ce.dRYYxd > div.WC2Die > div.nDcEnd");
-  if (el) {
+  const el = document.querySelector('div.nDcEnd[aria-label="Search by image"]');
+  if (el && window.getComputedStyle(el).display !== 'none' && window.getComputedStyle(el).visibility !== 'hidden') {
     el.scrollIntoView({ behavior: "smooth", block: "center" });
     el.focus();
     el.click();
@@ -151,12 +151,16 @@ JS_SNIPPET_4 = """
 try:
     driver.get("https://images.google.com")
     logger.info("🌐 Navigated to Google Images")
+    WebDriverWait(driver, 10).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, 'div.nDcEnd[aria-label="Search by image"]'))
+    )
+    logger.debug("⏳ Search by image button located")
     success = driver.execute_script(JS_SNIPPET_2)
     if success:
         logger.debug("✅ Snippet 2 executed successfully")
     else:
-        logger.error("❌ Snippet 2 failed: Search bar element not found")
-        raise Exception("Snippet 2 failed: Search bar element not found")
+        logger.error("❌ Snippet 2 failed: Search by image button not found or not interactable")
+        raise Exception("Snippet 2 failed: Search by image button not found or not interactable")
 except Exception as e:
     logger.error(f"❌ Failed to navigate or execute Snippet 2: {e}")
     raise
@@ -203,7 +207,7 @@ def search_images():
         if success:
             logger.debug("✅ Snippet 2 executed successfully")
         else:
-            logger.error("❌ Snippet 2 failed: Search bar element not found")
+            logger.error("❌ Snippet 2 failed: Search by image button not found or not interactable")
             return jsonify({"error": "Failed to reset search bar"}), 500
 
         logger.info("📤 Returning search results")
