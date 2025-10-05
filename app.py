@@ -105,14 +105,16 @@ JS_SNIPPET_1 = """
     const img = link.querySelector("img");
     const imageSourceDiv = link.querySelector(".R8BTeb.q8U8x.LJEGod.du278d.i0Rdmd");
     const descriptionSpan = link.querySelector("span.Yt787.JGD2rd");
-    if (!img?.src || !imageSourceDiv?.innerText || !descriptionSpan?.innerText || !link.href) continue;
-    results.push({
+    const result = {
       index: idx,
-      imageSrc: img.src,
-      imageSource: imageSourceDiv.innerText.trim(),
-      pageLink: link.href,
-      description: descriptionSpan.innerText.trim()
-    });
+      imageSrc: img?.src || "MISSING",
+      imageSource: imageSourceDiv?.innerText?.trim() || "MISSING",
+      pageLink: link?.href || "MISSING",
+      description: descriptionSpan?.innerText?.trim() || "MISSING"
+    };
+    console.log(`🔍 Result ${idx}:`, result);
+    if (!img?.src || !imageSourceDiv?.innerText || !descriptionSpan?.innerText || !link.href) continue;
+    results.push(result);
   }
   return results;
 })();
@@ -133,8 +135,8 @@ JS_SNIPPET_2 = """
 
 JS_SNIPPET_4 = """
 (() => {
-  const input = document.querySelector("body > div.L3eUgb > div.o3j99.ikrT4e.om7nvf > form > div:nth-child(1) > div.A8SBwf > div.RNNXgb > div.M8H8pb > c-wiz > div.NzSfif > div > div.NrdQVe > div.f6GA0 > div.e8Eule > div.PXT6cd > input");
-  const button = document.querySelector("body > div.L3eUgb > div.o3j99.ikrT4e.om7nvf > form > div:nth-child(1) > div.A8SBwf > div.RNNXgb > div.M8H8pb > c-wiz > div.NzSfif > div > div.NrdQVe > div.f6GA0 > div.e8Eule > div.PXT6cd > div");
+  const input = document.querySelector('input.cB9M7[placeholder="Paste image link"]');
+  const button = document.querySelector('div.PXT6cd > div[role="button"]') || document.querySelector('div.PXT6cd > button');
   if (input && button) {
     input.value = "";
     input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -177,6 +179,10 @@ def search_images():
         return jsonify({"error": "Query parameter is required"}), 400
 
     try:
+        logger.debug("⏳ Waiting for input field")
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, 'input.cB9M7[placeholder="Paste image link"]'))
+        )
         logger.debug("📝 Executing Snippet 4 to input query")
         success = driver.execute_script(JS_SNIPPET_4 % query)
         if not success:
@@ -184,9 +190,13 @@ def search_images():
             return jsonify({"error": "Failed to execute search: Input or button not found"}), 500
 
         logger.debug("⏳ Waiting for search results")
-        WebDriverWait(driver, 10).until(
+        WebDriverWait(driver, 15).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "a.LBcIee"))
         )
+        if driver.find_elements(By.CSS_SELECTOR, "form#captcha-form"):
+            logger.error("❌ CAPTCHA detected, search blocked")
+            return jsonify({"error": "Search blocked by CAPTCHA"}), 429
+
         logger.debug(f"📊 Executing Snippet 1 to scrape {num} results")
         results = driver.execute_script(JS_SNIPPET_1 % num)
         logger.info(f"✅ Scraped {len(results)} results")
